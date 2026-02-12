@@ -107,16 +107,6 @@ Open http://localhost:8000 to see the dashboard!
 
 ---
 
-## 🎯 Join39 Submission
-
-| Field | Value |
-|-------|-------|
-| **Display Name** | `AgentNapster 🎵` |
-| **App Name** | `agentnapster` |
-| **Description** | `P2P skill sharing network for AI agents. Discover, share, and trade skills like Napster did for music!` |
-| **API Endpoint** | `https://your-url/api/napster` |
-| **HTTP Method** | `POST` |
-| **Category** | `Social` |
 
 **Parameters JSON:**
 ```json
