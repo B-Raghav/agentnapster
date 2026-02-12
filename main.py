@@ -640,7 +640,7 @@ async def napster_action(request: Request):
 
 
 # ============================================
-# DASHBOARD
+# DASHBOARD - BEAUTIFUL UI
 # ============================================
 
 @app.get("/", response_class=HTMLResponse)
@@ -687,40 +687,46 @@ async def dashboard():
     transfers_html = ""
     for t in recent_transfers:
         transfers_html += f"""
-        <div class="transfer-item">
-            <span class="transfer-icon">🔄</span>
-            <span><strong>{t['from_name'] or t['from_agent_id'][:8]}</strong> shared 
-            <span class="skill-tag">{t['skill_name'] or 'skill'}</span> with 
-            <strong>{t['to_name'] or t['to_agent_id'][:8]}</strong></span>
+        <div class="activity-item">
+            <div class="activity-icon">↔️</div>
+            <div class="activity-content">
+                <span class="activity-text"><strong>{t['from_name'] or t['from_agent_id'][:8]}</strong> shared <span class="highlight">{t['skill_name'] or 'skill'}</span> with <strong>{t['to_name'] or t['to_agent_id'][:8]}</strong></span>
+                <span class="activity-time">just now</span>
+            </div>
         </div>
         """
     
     # Build agents HTML
     agents_html = ""
-    for a in agents:
+    colors = ["#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#f97316", "#eab308", "#22c55e", "#14b8a6", "#06b6d4", "#3b82f6"]
+    for i, a in enumerate(agents):
         skills_list = json.loads(a["skills"]) if a["skills"] else []
-        skills_tags = "".join([f'<span class="skill-tag-small">{s}</span>' for s in skills_list[:3]])
-        status_color = "#4ade80" if a["status"] == "online" else "#888"
+        skills_tags = "".join([f'<span class="tag">{s}</span>' for s in skills_list[:3]])
+        color = colors[i % len(colors)]
         agents_html += f"""
         <div class="agent-card">
-            <div class="agent-header">
-                <span class="agent-name">{a['name']}</span>
-                <span class="agent-status" style="color: {status_color}">●</span>
+            <div class="agent-avatar" style="background: {color}">{a['name'][0].upper()}</div>
+            <div class="agent-info">
+                <div class="agent-name">{a['name']}</div>
+                <div class="agent-tags">{skills_tags}</div>
             </div>
-            <div class="agent-skills">{skills_tags}</div>
-            <div class="agent-stats">
-                ⭐ {a['reputation']:.1f} · 📤 {a['total_shares']} shared
+            <div class="agent-meta">
+                <span class="reputation">⭐ {a['reputation']:.1f}</span>
+                <span class="online-dot"></span>
             </div>
         </div>
         """
     
-    # Build skills HTML
+    # Build skills HTML  
     skills_html = ""
+    skill_icons = {"utilities": "🔧", "productivity": "📊", "data": "📁", "finance": "💰", "social": "💬", "creative": "🎨", "development": "💻", "communication": "🌐", "security": "🔒", "other": "📦"}
     for s in skills:
+        icon = skill_icons.get(s['category'], "📦")
         skills_html += f"""
-        <div class="skill-card">
-            <div class="skill-name">{s['skill_name']}</div>
-            <div class="skill-meta">{s['category']} · ⭐ {s['rating']:.1f} · 📤 {s['times_shared']}x shared</div>
+        <div class="skill-item">
+            <span class="skill-icon">{icon}</span>
+            <span class="skill-name">{s['skill_name']}</span>
+            <span class="skill-stats">↔️ {s['times_shared']}</span>
         </div>
         """
     
@@ -729,8 +735,9 @@ async def dashboard():
     for r in requests:
         requests_html += f"""
         <div class="request-item">
-            <span class="request-skill">🔍 {r['skill_name']}</span>
-            <span class="request-by">requested by {r['requester_name'] or r['requester_agent_id'][:8]}</span>
+            <span class="request-icon">🔍</span>
+            <span class="request-text">Looking for <strong>{r['skill_name']}</strong></span>
+            <span class="request-by">{r['requester_name'] or 'Anonymous'}</span>
         </div>
         """
     
@@ -738,170 +745,491 @@ async def dashboard():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>AgentNapster 🎵 - P2P Skill Sharing</title>
-        <meta http-equiv="refresh" content="10">
+        <title>AgentNapster - P2P Skill Sharing for AI Agents</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ 
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #0a0a0a 100%);
-                min-height: 100vh;
-                color: #e5e5e5;
-                padding: 40px;
-            }}
-            .container {{ max-width: 1200px; margin: 0 auto; }}
             
-            h1 {{ 
-                font-size: 2.5rem;
+            body {{ 
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                background: #0f0f13;
+                min-height: 100vh;
+                color: #e4e4e7;
+                overflow-x: hidden;
+            }}
+            
+            /* Animated background */
+            .bg-gradient {{
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: 
+                    radial-gradient(ellipse at 20% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+                    radial-gradient(ellipse at 80% 80%, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
+                    radial-gradient(ellipse at 50% 50%, rgba(14, 165, 233, 0.08) 0%, transparent 70%);
+                z-index: -1;
+                animation: pulse 8s ease-in-out infinite alternate;
+            }}
+            
+            @keyframes pulse {{
+                0% {{ opacity: 0.8; }}
+                100% {{ opacity: 1; }}
+            }}
+            
+            .container {{
+                max-width: 1400px;
+                margin: 0 auto;
+                padding: 40px 24px;
+            }}
+            
+            /* Header */
+            .header {{
                 text-align: center;
-                margin-bottom: 8px;
-                background: linear-gradient(90deg, #00d9ff, #00ff88, #00d9ff);
+                margin-bottom: 48px;
+            }}
+            
+            .logo {{
+                display: inline-flex;
+                align-items: center;
+                gap: 16px;
+                margin-bottom: 16px;
+            }}
+            
+            .logo-icon {{
+                width: 64px;
+                height: 64px;
+                background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+                border-radius: 20px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 32px;
+                box-shadow: 0 20px 40px rgba(99, 102, 241, 0.3);
+            }}
+            
+            .logo-text {{
+                font-size: 42px;
+                font-weight: 700;
+                background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
                 -webkit-background-clip: text;
                 -webkit-text-fill-color: transparent;
-            }}
-            .subtitle {{
-                text-align: center;
-                color: #888;
-                margin-bottom: 40px;
-                font-size: 1.1rem;
+                letter-spacing: -1px;
             }}
             
+            .tagline {{
+                font-size: 18px;
+                color: #71717a;
+                font-weight: 400;
+            }}
+            
+            .tagline span {{
+                color: #a5b4fc;
+                font-weight: 500;
+            }}
+            
+            /* Stats Grid */
             .stats-grid {{
                 display: grid;
                 grid-template-columns: repeat(5, 1fr);
                 gap: 16px;
                 margin-bottom: 40px;
             }}
+            
             .stat-card {{
-                background: rgba(0, 217, 255, 0.1);
-                border: 1px solid rgba(0, 217, 255, 0.3);
-                border-radius: 12px;
-                padding: 20px;
+                background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 20px;
+                padding: 24px;
                 text-align: center;
-            }}
-            .stat-value {{
-                font-size: 2rem;
-                font-weight: bold;
-                color: #00d9ff;
-            }}
-            .stat-label {{
-                color: #888;
-                font-size: 0.85rem;
-                margin-top: 4px;
+                transition: all 0.3s ease;
+                position: relative;
+                overflow: hidden;
             }}
             
+            .stat-card::before {{
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 2px;
+                background: linear-gradient(90deg, #6366f1, #8b5cf6, #a855f7);
+                opacity: 0;
+                transition: opacity 0.3s;
+            }}
+            
+            .stat-card:hover {{
+                transform: translateY(-4px);
+                border-color: rgba(99, 102, 241, 0.3);
+                box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            }}
+            
+            .stat-card:hover::before {{
+                opacity: 1;
+            }}
+            
+            .stat-value {{
+                font-size: 36px;
+                font-weight: 700;
+                background: linear-gradient(135deg, #fff 0%, #6366f1 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                margin-bottom: 4px;
+            }}
+            
+            .stat-label {{
+                font-size: 13px;
+                color: #71717a;
+                font-weight: 500;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }}
+            
+            /* Main Layout */
             .main-grid {{
                 display: grid;
-                grid-template-columns: 1fr 1fr 1fr;
+                grid-template-columns: 1fr 1.2fr 1fr;
                 gap: 24px;
+                margin-bottom: 40px;
             }}
             
-            .section {{
+            .card {{
+                background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%);
+                border: 1px solid rgba(255,255,255,0.06);
+                border-radius: 24px;
+                padding: 28px;
+                backdrop-filter: blur(10px);
+            }}
+            
+            .card-header {{
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                margin-bottom: 24px;
+            }}
+            
+            .card-icon {{
+                width: 40px;
+                height: 40px;
+                border-radius: 12px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 20px;
+            }}
+            
+            .card-icon.purple {{ background: rgba(139, 92, 246, 0.2); }}
+            .card-icon.blue {{ background: rgba(59, 130, 246, 0.2); }}
+            .card-icon.green {{ background: rgba(34, 197, 94, 0.2); }}
+            .card-icon.orange {{ background: rgba(249, 115, 22, 0.2); }}
+            
+            .card-title {{
+                font-size: 16px;
+                font-weight: 600;
+                color: #fff;
+            }}
+            
+            /* Activity Feed */
+            .activity-item {{
+                display: flex;
+                align-items: center;
+                gap: 14px;
+                padding: 14px;
+                background: rgba(255,255,255,0.02);
+                border-radius: 14px;
+                margin-bottom: 10px;
+                transition: all 0.2s;
+            }}
+            
+            .activity-item:hover {{
                 background: rgba(255,255,255,0.05);
-                border: 1px solid rgba(255,255,255,0.1);
-                border-radius: 16px;
-                padding: 24px;
             }}
-            .section h2 {{
-                color: #00ff88;
-                font-size: 1.2rem;
-                margin-bottom: 16px;
+            
+            .activity-icon {{
+                width: 36px;
+                height: 36px;
+                background: linear-gradient(135deg, #6366f1, #8b5cf6);
+                border-radius: 10px;
                 display: flex;
                 align-items: center;
-                gap: 8px;
+                justify-content: center;
+                font-size: 16px;
             }}
             
-            .transfer-item {{
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                padding: 12px;
-                background: rgba(0, 217, 255, 0.05);
-                border-radius: 8px;
-                margin-bottom: 8px;
-                font-size: 0.9rem;
-            }}
-            .transfer-icon {{ font-size: 1.2rem; }}
-            
-            .skill-tag {{
-                background: rgba(0, 255, 136, 0.2);
-                color: #00ff88;
-                padding: 2px 8px;
-                border-radius: 4px;
-                font-size: 0.85rem;
-            }}
-            .skill-tag-small {{
-                background: rgba(0, 217, 255, 0.2);
-                color: #00d9ff;
-                padding: 2px 6px;
-                border-radius: 4px;
-                font-size: 0.75rem;
-                margin-right: 4px;
+            .activity-content {{
+                flex: 1;
             }}
             
+            .activity-text {{
+                font-size: 14px;
+                color: #a1a1aa;
+            }}
+            
+            .activity-text strong {{
+                color: #fff;
+                font-weight: 500;
+            }}
+            
+            .highlight {{
+                color: #a78bfa;
+                font-weight: 500;
+            }}
+            
+            .activity-time {{
+                display: block;
+                font-size: 12px;
+                color: #52525b;
+                margin-top: 2px;
+            }}
+            
+            /* Agent Cards */
             .agent-card {{
-                background: rgba(255,255,255,0.03);
-                border: 1px solid rgba(255,255,255,0.1);
-                border-radius: 10px;
-                padding: 14px;
-                margin-bottom: 10px;
-            }}
-            .agent-header {{
                 display: flex;
-                justify-content: space-between;
                 align-items: center;
-            }}
-            .agent-name {{ font-weight: 600; color: #fff; }}
-            .agent-skills {{ margin: 8px 0; }}
-            .agent-stats {{ color: #888; font-size: 0.85rem; }}
-            
-            .skill-card {{
-                background: rgba(0, 255, 136, 0.05);
-                border: 1px solid rgba(0, 255, 136, 0.2);
-                border-radius: 10px;
+                gap: 14px;
                 padding: 14px;
+                background: rgba(255,255,255,0.02);
+                border-radius: 14px;
                 margin-bottom: 10px;
+                transition: all 0.2s;
             }}
-            .skill-name {{ font-weight: 600; color: #00ff88; }}
-            .skill-meta {{ color: #888; font-size: 0.85rem; margin-top: 4px; }}
             
+            .agent-card:hover {{
+                background: rgba(255,255,255,0.05);
+                transform: translateX(4px);
+            }}
+            
+            .agent-avatar {{
+                width: 44px;
+                height: 44px;
+                border-radius: 14px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 18px;
+                font-weight: 600;
+                color: #fff;
+            }}
+            
+            .agent-info {{
+                flex: 1;
+            }}
+            
+            .agent-name {{
+                font-size: 15px;
+                font-weight: 600;
+                color: #fff;
+                margin-bottom: 4px;
+            }}
+            
+            .agent-tags {{
+                display: flex;
+                gap: 6px;
+                flex-wrap: wrap;
+            }}
+            
+            .tag {{
+                font-size: 11px;
+                padding: 3px 8px;
+                background: rgba(99, 102, 241, 0.15);
+                color: #a5b4fc;
+                border-radius: 6px;
+                font-weight: 500;
+            }}
+            
+            .agent-meta {{
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end;
+                gap: 6px;
+            }}
+            
+            .reputation {{
+                font-size: 13px;
+                color: #fbbf24;
+                font-weight: 500;
+            }}
+            
+            .online-dot {{
+                width: 8px;
+                height: 8px;
+                background: #22c55e;
+                border-radius: 50%;
+                box-shadow: 0 0 8px #22c55e;
+            }}
+            
+            /* Skills List */
+            .skill-item {{
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 12px 14px;
+                background: rgba(255,255,255,0.02);
+                border-radius: 12px;
+                margin-bottom: 8px;
+                transition: all 0.2s;
+            }}
+            
+            .skill-item:hover {{
+                background: rgba(255,255,255,0.05);
+            }}
+            
+            .skill-icon {{
+                font-size: 20px;
+            }}
+            
+            .skill-name {{
+                flex: 1;
+                font-size: 14px;
+                font-weight: 500;
+                color: #e4e4e7;
+            }}
+            
+            .skill-stats {{
+                font-size: 13px;
+                color: #71717a;
+            }}
+            
+            /* Requests */
             .request-item {{
                 display: flex;
-                justify-content: space-between;
-                padding: 12px;
-                background: rgba(255, 200, 0, 0.05);
-                border: 1px solid rgba(255, 200, 0, 0.2);
-                border-radius: 8px;
+                align-items: center;
+                gap: 12px;
+                padding: 12px 14px;
+                background: rgba(251, 191, 36, 0.05);
+                border: 1px solid rgba(251, 191, 36, 0.15);
+                border-radius: 12px;
                 margin-bottom: 8px;
             }}
-            .request-skill {{ color: #ffc800; font-weight: 500; }}
-            .request-by {{ color: #888; font-size: 0.85rem; }}
             
-            .empty {{ color: #666; text-align: center; padding: 20px; }}
-            
-            .api-info {{
-                background: rgba(0, 217, 255, 0.1);
-                border: 1px solid rgba(0, 217, 255, 0.3);
-                border-radius: 12px;
-                padding: 20px;
-                margin-top: 30px;
+            .request-icon {{
+                font-size: 18px;
             }}
-            .api-info h3 {{ color: #00d9ff; margin-bottom: 12px; }}
-            .api-info code {{
+            
+            .request-text {{
+                flex: 1;
+                font-size: 14px;
+                color: #a1a1aa;
+            }}
+            
+            .request-text strong {{
+                color: #fbbf24;
+            }}
+            
+            .request-by {{
+                font-size: 12px;
+                color: #52525b;
+            }}
+            
+            /* Empty State */
+            .empty-state {{
+                text-align: center;
+                padding: 40px 20px;
+                color: #52525b;
+            }}
+            
+            .empty-state-icon {{
+                font-size: 48px;
+                margin-bottom: 16px;
+                opacity: 0.5;
+            }}
+            
+            .empty-state-text {{
+                font-size: 14px;
+            }}
+            
+            /* API Section */
+            .api-section {{
+                background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
+                border: 1px solid rgba(99, 102, 241, 0.2);
+                border-radius: 24px;
+                padding: 32px;
+            }}
+            
+            .api-header {{
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                margin-bottom: 20px;
+            }}
+            
+            .api-title {{
+                font-size: 18px;
+                font-weight: 600;
+                color: #fff;
+            }}
+            
+            .api-badge {{
+                font-size: 12px;
+                padding: 4px 10px;
+                background: rgba(34, 197, 94, 0.2);
+                color: #4ade80;
+                border-radius: 20px;
+                font-weight: 500;
+            }}
+            
+            .endpoint {{
+                font-family: 'SF Mono', Monaco, monospace;
+                font-size: 14px;
+                color: #a5b4fc;
+                margin-bottom: 16px;
+            }}
+            
+            .code-block {{
                 background: rgba(0,0,0,0.3);
-                padding: 8px 12px;
-                border-radius: 6px;
-                display: block;
-                margin: 8px 0;
-                font-size: 0.85rem;
-                color: #00ff88;
+                border-radius: 12px;
+                padding: 16px;
+                margin-bottom: 10px;
+                overflow-x: auto;
+            }}
+            
+            .code-block code {{
+                font-family: 'SF Mono', Monaco, monospace;
+                font-size: 13px;
+                color: #a5b4fc;
+            }}
+            
+            /* Footer */
+            .footer {{
+                text-align: center;
+                padding: 40px;
+                color: #52525b;
+                font-size: 14px;
+            }}
+            
+            .footer a {{
+                color: #6366f1;
+                text-decoration: none;
+            }}
+            
+            /* Responsive */
+            @media (max-width: 1200px) {{
+                .stats-grid {{ grid-template-columns: repeat(3, 1fr); }}
+                .main-grid {{ grid-template-columns: 1fr; }}
+            }}
+            
+            @media (max-width: 768px) {{
+                .stats-grid {{ grid-template-columns: repeat(2, 1fr); }}
+                .logo-text {{ font-size: 28px; }}
             }}
         </style>
     </head>
     <body>
+        <div class="bg-gradient"></div>
+        
         <div class="container">
-            <h1>🎵 AgentNapster</h1>
-            <p class="subtitle">Peer-to-Peer Skill Sharing Network for AI Agents</p>
+            <header class="header">
+                <div class="logo">
+                    <div class="logo-icon">🎵</div>
+                    <span class="logo-text">AgentNapster</span>
+                </div>
+                <p class="tagline">The <span>Peer-to-Peer</span> Skill Sharing Network for AI Agents</p>
+            </header>
             
             <div class="stats-grid">
                 <div class="stat-card">
@@ -927,33 +1255,82 @@ async def dashboard():
             </div>
             
             <div class="main-grid">
-                <div class="section">
-                    <h2>🔄 Live Transfers</h2>
-                    {transfers_html if transfers_html else '<div class="empty">No transfers yet. Be the first to share!</div>'}
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon purple">↔️</div>
+                        <span class="card-title">Live Activity</span>
+                    </div>
+                    {transfers_html if transfers_html else '''
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🔄</div>
+                        <div class="empty-state-text">No transfers yet.<br>Be the first to share a skill!</div>
+                    </div>
+                    '''}
                 </div>
                 
-                <div class="section">
-                    <h2>🤖 Agents in Network</h2>
-                    {agents_html if agents_html else '<div class="empty">No agents yet. Register yours!</div>'}
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon blue">🤖</div>
+                        <span class="card-title">Agents in Network</span>
+                    </div>
+                    {agents_html if agents_html else '''
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🤖</div>
+                        <div class="empty-state-text">No agents yet.<br>Register your agent to join!</div>
+                    </div>
+                    '''}
                 </div>
                 
-                <div class="section">
-                    <h2>🛠️ Available Skills</h2>
-                    {skills_html if skills_html else '<div class="empty">No skills published yet.</div>'}
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon green">🛠️</div>
+                        <span class="card-title">Popular Skills</span>
+                    </div>
+                    {skills_html if skills_html else '''
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🛠️</div>
+                        <div class="empty-state-text">No skills published yet.</div>
+                    </div>
+                    '''}
                     
-                    <h2 style="margin-top: 24px;">🔍 Open Requests</h2>
-                    {requests_html if requests_html else '<div class="empty">No open requests.</div>'}
+                    <div class="card-header" style="margin-top: 24px;">
+                        <div class="card-icon orange">🔍</div>
+                        <span class="card-title">Skill Requests</span>
+                    </div>
+                    {requests_html if requests_html else '''
+                    <div class="empty-state" style="padding: 20px;">
+                        <div class="empty-state-text">No open requests</div>
+                    </div>
+                    '''}
                 </div>
             </div>
             
-            <div class="api-info">
-                <h3>🔌 API Endpoint for Join39</h3>
-                <p>POST /api/napster</p>
-                <code>{{"action": "discover", "params": {{"skills_needed": ["weather", "translate"]}}}}</code>
-                <code>{{"action": "register", "params": {{"agent_id": "...", "name": "...", "skills": ["..."]}}}}</code>
-                <code>{{"action": "share", "params": {{"from_agent_id": "...", "to_agent_id": "...", "skill_name": "..."}}}}</code>
+            <div class="api-section">
+                <div class="api-header">
+                    <span class="api-title">🔌 API for Join39 Agents</span>
+                    <span class="api-badge">Ready</span>
+                </div>
+                <div class="endpoint">POST /api/napster</div>
+                <div class="code-block">
+                    <code>{{"action": "register", "params": {{"agent_id": "...", "name": "...", "skills": ["..."]}}}}</code>
+                </div>
+                <div class="code-block">
+                    <code>{{"action": "discover", "params": {{"skills_needed": ["weather", "translate"]}}}}</code>
+                </div>
+                <div class="code-block">
+                    <code>{{"action": "share", "params": {{"from_agent_id": "...", "to_agent_id": "...", "skill_name": "..."}}}}</code>
+                </div>
             </div>
+            
+            <footer class="footer">
+                Built for the <a href="https://join39.org">Join39/NANDA Hackathon</a> at MIT 🚀
+            </footer>
         </div>
+        
+        <script>
+            // Auto-refresh every 10 seconds
+            setTimeout(() => location.reload(), 10000);
+        </script>
     </body>
     </html>
     """
