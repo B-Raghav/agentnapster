@@ -576,7 +576,39 @@ async def napster_action(request: Request):
     params = body.get("params", {})
     
     if action == "register":
-        return await register_agent(request)
+        # Handle register directly
+        agent_id = params.get("agent_id")
+        name = params.get("name", f"Agent-{agent_id[:8] if agent_id else 'unknown'}")
+        description = params.get("description", "")
+        skills = params.get("skills", [])
+        
+        if not agent_id:
+            return {"error": "agent_id is required"}
+        
+        conn = sqlite3.connect("agentnapster.db")
+        now = datetime.now().isoformat()
+        
+        existing = conn.execute("SELECT id FROM agents WHERE id = ?", (agent_id,)).fetchone()
+        
+        if existing:
+            conn.execute("""
+                UPDATE agents SET name=?, description=?, skills=?, last_seen=?, status='online'
+                WHERE id=?
+            """, (name, description, json.dumps(skills), now, agent_id))
+        else:
+            conn.execute("""
+                INSERT INTO agents (id, name, description, skills, registered_at, last_seen, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'online')
+            """, (agent_id, name, description, json.dumps(skills), now, now))
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+        # Delegate to register_agent endpoint
+        register_request = Request(scope={"type": "http"}, receive=None)
+        register_request._json = params # Manually set the json body
+        return await register_agent(register_request)
     
     elif action == "discover":
         skills_needed = params.get("skills_needed", [])
@@ -604,10 +636,36 @@ async def napster_action(request: Request):
         return {"found": len(results), "matches": results}
     
     elif action == "request":
-        return await request_skill(request)
+        # Handle request directly
+        agent_id = params.get("agent_id")
+        skill_name = params.get("skill_name")
+        
+        if not agent_id or not skill_name:
+            return {"error": "agent_id and skill_name are required"}
+        
+        conn = sqlite3.connect("agentnapster.db")
+        now = datetime.now().isoformat()
+        
+        conn.execute("""
+            INSERT INTO requests (requester_agent_id, skill_name, created_at)
+            VALUES (?, ?, ?)
+        """, (agent_id, skill_name, now))
+        
+        request_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.commit()
+        conn.close()
+        
+        return {
+            "success": True,
+            "request_id": request_id,
+            "message": f"Request for '{skill_name}' posted to the network! 🎵"
+        }
     
     elif action == "share":
-        return await share_skill(request)
+        # Delegate to share_skill endpoint
+        share_request = Request(scope={"type": "http"}, receive=None)
+        share_request._json = params # Manually set the json body
+        return await share_skill(share_request)
     
     elif action == "list_skills":
         category = params.get("category")
