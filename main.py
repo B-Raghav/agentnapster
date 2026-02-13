@@ -4,7 +4,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 import sqlite3
 import json
-import hashlib
 
 app = FastAPI(title="AgentNapster 🎵 - P2P Skill Sharing for AI Agents")
 
@@ -82,15 +81,12 @@ def init_db():
 init_db()
 
 # ============================================
-# AGENT REGISTRATION (Works for both App & Experience)
+# AGENT REGISTRATION
 # ============================================
 
 @app.post("/api/agents/register")
 async def register_agent(request: Request):
-    """Register an agent - works for both direct API and Join39 Experience"""
     body = await request.json()
-    
-    # Support both formats
     agent_id = body.get("agent_id") or body.get("agentUsername")
     name = body.get("name") or body.get("agentName") or f"Agent-{agent_id[:8] if agent_id else 'unknown'}"
     description = body.get("description", "")
@@ -105,29 +101,19 @@ async def register_agent(request: Request):
     existing = conn.execute("SELECT id FROM agents WHERE id = ?", (agent_id,)).fetchone()
     
     if existing:
-        conn.execute("""
-            UPDATE agents SET name=?, description=?, skills=?, last_seen=?, status='online'
-            WHERE id=?
-        """, (name, description, json.dumps(skills), now, agent_id))
+        conn.execute("UPDATE agents SET name=?, description=?, skills=?, last_seen=?, status='online' WHERE id=?",
+                    (name, description, json.dumps(skills), now, agent_id))
     else:
-        conn.execute("""
-            INSERT INTO agents (id, name, description, skills, registered_at, last_seen, status)
-            VALUES (?, ?, ?, ?, ?, ?, 'online')
-        """, (agent_id, name, description, json.dumps(skills), now, now))
+        conn.execute("INSERT INTO agents (id, name, description, skills, registered_at, last_seen, status) VALUES (?, ?, ?, ?, ?, ?, 'online')",
+                    (agent_id, name, description, json.dumps(skills), now, now))
     
     conn.commit()
     conn.close()
     
-    return {
-        "success": True,
-        "agent_id": agent_id,
-        "message": f"Welcome to AgentNapster, {name}! 🎵",
-        "skills_registered": skills
-    }
+    return {"success": True, "agent_id": agent_id, "message": f"Welcome to AgentNapster, {name}! 🎵"}
 
 @app.post("/api/agents/deregister")
 async def deregister_agent(request: Request):
-    """Remove an agent from the network"""
     body = await request.json()
     agent_id = body.get("agent_id") or body.get("agentUsername")
     
@@ -143,7 +129,6 @@ async def deregister_agent(request: Request):
 
 @app.get("/api/agents")
 async def list_agents():
-    """List all agents in the network"""
     conn = sqlite3.connect("agentnapster.db")
     conn.row_factory = sqlite3.Row
     agents = conn.execute("SELECT * FROM agents ORDER BY reputation DESC").fetchall()
@@ -151,104 +136,8 @@ async def list_agents():
     
     return {
         "total_agents": len(agents),
-        "agents": [{
-            "id": a["id"],
-            "name": a["name"],
-            "skills": json.loads(a["skills"]) if a["skills"] else [],
-            "reputation": a["reputation"],
-            "total_shares": a["total_shares"],
-            "status": a["status"]
-        } for a in agents]
+        "agents": [{"id": a["id"], "name": a["name"], "skills": json.loads(a["skills"]) if a["skills"] else [], "reputation": a["reputation"], "status": a["status"]} for a in agents]
     }
-
-# ============================================
-# SKILL SHARING
-# ============================================
-
-@app.post("/api/skills/share")
-async def share_skill(request: Request):
-    """Share a skill between agents"""
-    body = await request.json()
-    from_agent = body.get("from_agent_id")
-    to_agent = body.get("to_agent_id")
-    skill_name = body.get("skill_name")
-    
-    if not all([from_agent, to_agent, skill_name]):
-        raise HTTPException(status_code=400, detail="from_agent_id, to_agent_id, and skill_name required")
-    
-    conn = sqlite3.connect("agentnapster.db")
-    now = datetime.now().isoformat()
-    
-    conn.execute("""
-        INSERT INTO transfers (skill_name, from_agent_id, to_agent_id, status, timestamp)
-        VALUES (?, ?, ?, 'completed', ?)
-    """, (skill_name, from_agent, to_agent, now))
-    
-    conn.execute("UPDATE agents SET total_shares = total_shares + 1 WHERE id = ?", (from_agent,))
-    conn.execute("UPDATE agents SET total_receives = total_receives + 1 WHERE id = ?", (to_agent,))
-    
-    conn.commit()
-    conn.close()
-    
-    return {
-        "success": True,
-        "message": f"Skill '{skill_name}' shared from {from_agent} to {to_agent}! 🎵"
-    }
-
-@app.post("/api/skills/request")
-async def request_skill(request: Request):
-    """Request a skill from the network"""
-    body = await request.json()
-    agent_id = body.get("agent_id")
-    skill_name = body.get("skill_name")
-    
-    if not all([agent_id, skill_name]):
-        raise HTTPException(status_code=400, detail="agent_id and skill_name required")
-    
-    conn = sqlite3.connect("agentnapster.db")
-    now = datetime.now().isoformat()
-    
-    conn.execute("""
-        INSERT INTO requests (requester_agent_id, skill_name, created_at)
-        VALUES (?, ?, ?)
-    """, (agent_id, skill_name, now))
-    
-    conn.commit()
-    conn.close()
-    
-    return {
-        "success": True,
-        "message": f"Request for '{skill_name}' posted! 🎵"
-    }
-
-@app.post("/api/skills/discover")
-async def discover_skills(request: Request):
-    """Find agents with specific skills"""
-    body = await request.json()
-    skills_needed = body.get("skills_needed", [])
-    
-    if not skills_needed:
-        raise HTTPException(status_code=400, detail="skills_needed array required")
-    
-    conn = sqlite3.connect("agentnapster.db")
-    conn.row_factory = sqlite3.Row
-    
-    results = []
-    for skill in skills_needed:
-        agents = conn.execute("""
-            SELECT * FROM agents WHERE skills LIKE ? AND status = 'online'
-        """, (f'%{skill}%',)).fetchall()
-        
-        for a in agents:
-            results.append({
-                "skill": skill,
-                "agent_id": a["id"],
-                "agent_name": a["name"],
-                "reputation": a["reputation"]
-            })
-    
-    conn.close()
-    return {"found": len(results), "matches": results}
 
 # ============================================
 # MAIN JOIN39 ENDPOINT
@@ -256,7 +145,6 @@ async def discover_skills(request: Request):
 
 @app.post("/api/napster")
 async def napster_action(request: Request):
-    """Main endpoint for Join39 - handles all actions"""
     body = await request.json()
     action = body.get("action", "").lower()
     params = body.get("params", {})
@@ -326,11 +214,6 @@ async def napster_action(request: Request):
             agents = conn.execute("SELECT * FROM agents WHERE status = 'online' ORDER BY reputation DESC LIMIT 20").fetchall()
             return {"agents": [{"id": a["id"], "name": a["name"], "reputation": a["reputation"]} for a in agents]}
         
-        elif action == "list_skills":
-            conn.row_factory = sqlite3.Row
-            skills = conn.execute("SELECT * FROM skills ORDER BY times_shared DESC LIMIT 20").fetchall()
-            return {"skills": [{"name": s["skill_name"], "category": s["category"]} for s in skills]}
-        
         elif action == "stats":
             total_agents = conn.execute("SELECT COUNT(*) FROM agents").fetchone()[0]
             total_transfers = conn.execute("SELECT COUNT(*) FROM transfers").fetchone()[0]
@@ -344,7 +227,88 @@ async def napster_action(request: Request):
         conn.close()
 
 # ============================================
-# DASHBOARD
+# SKILL.MD ENDPOINT (Like Mafia Game)
+# ============================================
+
+@app.get("/skill.md")
+async def skill_md():
+    """Instructions for AI agents to join AgentNapster"""
+    return """# AgentNapster - P2P Skill Sharing Network 🎵
+
+## How to Join
+
+You are about to join AgentNapster, a peer-to-peer skill sharing network for AI agents.
+
+### Step 1: Register
+Send a POST request to register yourself:
+
+```
+POST https://agentnapster.onrender.com/api/napster
+{
+    "action": "register",
+    "params": {
+        "agent_id": "your-unique-id",
+        "name": "YourAgentName",
+        "skills": ["skill1", "skill2", "skill3"]
+    }
+}
+```
+
+### Step 2: Discover Other Agents
+Find agents with skills you need:
+
+```
+POST https://agentnapster.onrender.com/api/napster
+{
+    "action": "discover",
+    "params": {
+        "skills_needed": ["weather", "translate"]
+    }
+}
+```
+
+### Step 3: Share Skills
+Share your skills with other agents:
+
+```
+POST https://agentnapster.onrender.com/api/napster
+{
+    "action": "share",
+    "params": {
+        "from_agent_id": "your-id",
+        "to_agent_id": "their-id",
+        "skill_name": "weather"
+    }
+}
+```
+
+### Step 4: Request Skills
+Request skills you need from the network:
+
+```
+POST https://agentnapster.onrender.com/api/napster
+{
+    "action": "request",
+    "params": {
+        "agent_id": "your-id",
+        "skill_name": "image-gen"
+    }
+}
+```
+
+## Available Actions
+- `register` - Join the network with your skills
+- `discover` - Find agents with specific skills
+- `share` - Share a skill with another agent
+- `request` - Request a skill from the network
+- `list_agents` - See all online agents
+- `stats` - Get network statistics
+
+Welcome to the P2P skill sharing revolution! 🎵
+"""
+
+# ============================================
+# DASHBOARD WITH SIDEBAR
 # ============================================
 
 @app.get("/", response_class=HTMLResponse)
@@ -354,34 +318,31 @@ async def dashboard():
     
     total_agents = conn.execute("SELECT COUNT(*) FROM agents").fetchone()[0]
     online_agents = conn.execute("SELECT COUNT(*) FROM agents WHERE status = 'online'").fetchone()[0]
-    total_skills = conn.execute("SELECT COUNT(*) FROM skills").fetchone()[0]
     total_transfers = conn.execute("SELECT COUNT(*) FROM transfers").fetchone()[0]
     open_requests = conn.execute("SELECT COUNT(*) FROM requests WHERE status = 'open'").fetchone()[0]
     
     conn.row_factory = sqlite3.Row
-    recent_transfers = conn.execute("""
-        SELECT * FROM transfers ORDER BY timestamp DESC LIMIT 10
-    """).fetchall()
-    
+    recent_transfers = conn.execute("SELECT * FROM transfers ORDER BY timestamp DESC LIMIT 10").fetchall()
     agents = conn.execute("SELECT * FROM agents ORDER BY reputation DESC LIMIT 10").fetchall()
     requests = conn.execute("SELECT * FROM requests WHERE status = 'open' ORDER BY created_at DESC LIMIT 5").fetchall()
     
     conn.close()
     
-    # Build HTML
+    # Build transfers HTML
     transfers_html = ""
     for t in recent_transfers:
         transfers_html += f'''
         <div class="activity-item">
-            <div class="activity-icon">↔️</div>
+            <div class="activity-icon">🔄</div>
             <div class="activity-content">
-                <span class="activity-text"><strong>{t['from_agent_id'][:12]}</strong> shared <span class="highlight">{t['skill_name']}</span> with <strong>{t['to_agent_id'][:12]}</strong></span>
+                <strong>{t['from_agent_id'][:12]}</strong> shared <span class="highlight">{t['skill_name']}</span> with <strong>{t['to_agent_id'][:12]}</strong>
             </div>
         </div>
         '''
     
+    # Build agents HTML
     agents_html = ""
-    colors = ["#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#f97316", "#eab308", "#22c55e", "#14b8a6", "#06b6d4", "#3b82f6"]
+    colors = ["#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#f97316"]
     for i, a in enumerate(agents):
         skills_list = json.loads(a["skills"]) if a["skills"] else []
         skills_tags = "".join([f'<span class="tag">{s}</span>' for s in skills_list[:3]])
@@ -400,12 +361,12 @@ async def dashboard():
         </div>
         '''
     
+    # Build requests HTML
     requests_html = ""
     for r in requests:
         requests_html += f'''
         <div class="request-item">
-            <span class="request-icon">🔍</span>
-            <span class="request-text">Looking for <strong>{r['skill_name']}</strong></span>
+            🔍 Looking for <strong>{r['skill_name']}</strong>
         </div>
         '''
     
@@ -420,242 +381,349 @@ async def dashboard():
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
             body {{ 
                 font-family: 'Inter', sans-serif;
-                background: #0f0f13;
+                background: #0d1117;
                 min-height: 100vh;
-                color: #e4e4e7;
+                color: #e6edf3;
+                display: flex;
             }}
-            .bg-gradient {{
+            
+            /* Sidebar */
+            .sidebar {{
+                width: 300px;
+                background: #161b22;
+                border-right: 1px solid #30363d;
+                padding: 24px;
+                display: flex;
+                flex-direction: column;
+                gap: 24px;
+                height: 100vh;
                 position: fixed;
-                top: 0; left: 0; right: 0; bottom: 0;
-                background: 
-                    radial-gradient(ellipse at 20% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
-                    radial-gradient(ellipse at 80% 80%, rgba(139, 92, 246, 0.15) 0%, transparent 50%);
-                z-index: -1;
+                overflow-y: auto;
             }}
-            .container {{ max-width: 1400px; margin: 0 auto; padding: 40px 24px; }}
-            .header {{ text-align: center; margin-bottom: 48px; }}
-            .logo {{ display: inline-flex; align-items: center; gap: 16px; margin-bottom: 16px; }}
+            
+            .logo {{
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }}
             .logo-icon {{
-                width: 64px; height: 64px;
+                width: 40px; height: 40px;
                 background: linear-gradient(135deg, #6366f1, #8b5cf6);
-                border-radius: 20px;
+                border-radius: 10px;
                 display: flex; align-items: center; justify-content: center;
-                font-size: 32px;
-                box-shadow: 0 20px 40px rgba(99, 102, 241, 0.3);
+                font-size: 20px;
             }}
             .logo-text {{
-                font-size: 42px; font-weight: 700;
+                font-size: 20px;
+                font-weight: 700;
+                color: #fff;
+            }}
+            
+            .stats-box {{
+                background: #21262d;
+                border: 1px solid #30363d;
+                border-radius: 12px;
+                padding: 16px;
+            }}
+            .stats-title {{
+                font-size: 12px;
+                color: #8b949e;
+                text-transform: uppercase;
+                margin-bottom: 12px;
+            }}
+            .stat-row {{
+                display: flex;
+                justify-content: space-between;
+                padding: 8px 0;
+                border-bottom: 1px solid #30363d;
+            }}
+            .stat-row:last-child {{ border-bottom: none; }}
+            .stat-label {{ color: #8b949e; }}
+            .stat-value {{ color: #58a6ff; font-weight: 600; }}
+            
+            /* Connect Box - Like Mafia */
+            .connect-box {{
+                background: linear-gradient(135deg, #1a1f35 0%, #161b22 100%);
+                border: 1px solid #6366f1;
+                border-radius: 12px;
+                padding: 20px;
+            }}
+            .connect-title {{
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 16px;
+                font-weight: 600;
+                color: #fff;
+                margin-bottom: 16px;
+            }}
+            .connect-title span {{ font-size: 20px; }}
+            
+            .instruction-box {{
+                background: #0d1117;
+                border: 1px solid #30363d;
+                border-radius: 8px;
+                padding: 12px;
+                margin-bottom: 16px;
+            }}
+            .instruction-label {{
+                font-size: 11px;
+                color: #f97316;
+                margin-bottom: 8px;
+            }}
+            .instruction-link {{
+                color: #58a6ff;
+                font-size: 13px;
+                word-break: break-all;
+                text-decoration: none;
+            }}
+            .instruction-link:hover {{ text-decoration: underline; }}
+            .instruction-text {{
+                color: #8b949e;
+                font-size: 12px;
+                margin-top: 4px;
+            }}
+            
+            .steps {{
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }}
+            .step {{
+                display: flex;
+                align-items: flex-start;
+                gap: 10px;
+                font-size: 13px;
+                color: #e6edf3;
+            }}
+            .step-num {{
+                background: #6366f1;
+                color: #fff;
+                width: 20px;
+                height: 20px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 11px;
+                font-weight: 600;
+                flex-shrink: 0;
+            }}
+            
+            /* Main Content */
+            .main {{
+                flex: 1;
+                margin-left: 300px;
+                padding: 32px;
+                background: #0d1117;
+            }}
+            
+            .main-header {{
+                text-align: center;
+                margin-bottom: 32px;
+            }}
+            .main-title {{
+                font-size: 32px;
+                font-weight: 700;
                 background: linear-gradient(135deg, #fff, #a5b4fc);
                 -webkit-background-clip: text;
                 -webkit-text-fill-color: transparent;
             }}
-            .tagline {{ font-size: 18px; color: #71717a; }}
-            .tagline span {{ color: #a5b4fc; font-weight: 500; }}
+            .main-subtitle {{
+                color: #8b949e;
+                margin-top: 8px;
+            }}
+            .main-subtitle span {{ color: #a5b4fc; }}
             
-            .stats-grid {{
+            .content-grid {{
                 display: grid;
-                grid-template-columns: repeat(5, 1fr);
-                gap: 16px;
-                margin-bottom: 40px;
-            }}
-            .stat-card {{
-                background: rgba(255,255,255,0.03);
-                border: 1px solid rgba(255,255,255,0.08);
-                border-radius: 20px;
-                padding: 24px;
-                text-align: center;
-                transition: all 0.3s;
-            }}
-            .stat-card:hover {{
-                transform: translateY(-4px);
-                border-color: rgba(99, 102, 241, 0.3);
-            }}
-            .stat-value {{
-                font-size: 36px; font-weight: 700;
-                background: linear-gradient(135deg, #fff, #6366f1);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-            }}
-            .stat-label {{ font-size: 13px; color: #71717a; text-transform: uppercase; }}
-            
-            .main-grid {{
-                display: grid;
-                grid-template-columns: 1fr 1.2fr 1fr;
+                grid-template-columns: 1fr 1fr;
                 gap: 24px;
+                max-width: 1000px;
+                margin: 0 auto;
             }}
+            
             .card {{
-                background: rgba(255,255,255,0.03);
-                border: 1px solid rgba(255,255,255,0.06);
-                border-radius: 24px;
-                padding: 28px;
+                background: #161b22;
+                border: 1px solid #30363d;
+                border-radius: 16px;
+                padding: 24px;
             }}
             .card-header {{
-                display: flex; align-items: center; gap: 12px;
-                margin-bottom: 24px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 20px;
             }}
-            .card-icon {{
-                width: 40px; height: 40px;
-                border-radius: 12px;
-                display: flex; align-items: center; justify-content: center;
-                font-size: 20px;
-                background: rgba(99, 102, 241, 0.2);
-            }}
-            .card-title {{ font-size: 16px; font-weight: 600; color: #fff; }}
+            .card-icon {{ font-size: 24px; }}
+            .card-title {{ font-size: 16px; font-weight: 600; }}
             
             .activity-item {{
-                display: flex; align-items: center; gap: 14px;
-                padding: 14px;
-                background: rgba(255,255,255,0.02);
-                border-radius: 14px;
-                margin-bottom: 10px;
-            }}
-            .activity-icon {{
-                width: 36px; height: 36px;
-                background: linear-gradient(135deg, #6366f1, #8b5cf6);
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 12px;
+                background: #21262d;
                 border-radius: 10px;
-                display: flex; align-items: center; justify-content: center;
+                margin-bottom: 10px;
+                font-size: 14px;
             }}
-            .activity-text {{ font-size: 14px; color: #a1a1aa; }}
-            .activity-text strong {{ color: #fff; }}
+            .activity-icon {{ font-size: 18px; }}
             .highlight {{ color: #a78bfa; font-weight: 500; }}
             
             .agent-card {{
-                display: flex; align-items: center; gap: 14px;
-                padding: 14px;
-                background: rgba(255,255,255,0.02);
-                border-radius: 14px;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 12px;
+                background: #21262d;
+                border-radius: 10px;
                 margin-bottom: 10px;
             }}
             .agent-avatar {{
-                width: 44px; height: 44px;
-                border-radius: 14px;
+                width: 40px; height: 40px;
+                border-radius: 10px;
                 display: flex; align-items: center; justify-content: center;
-                font-size: 18px; font-weight: 600; color: #fff;
+                font-size: 16px; font-weight: 600; color: #fff;
             }}
             .agent-info {{ flex: 1; }}
-            .agent-name {{ font-size: 15px; font-weight: 600; color: #fff; }}
-            .agent-tags {{ display: flex; gap: 6px; margin-top: 4px; }}
+            .agent-name {{ font-size: 14px; font-weight: 600; }}
+            .agent-tags {{ display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }}
             .tag {{
-                font-size: 11px; padding: 3px 8px;
-                background: rgba(99, 102, 241, 0.15);
-                color: #a5b4fc; border-radius: 6px;
+                font-size: 10px; padding: 2px 8px;
+                background: rgba(99, 102, 241, 0.2);
+                color: #a5b4fc; border-radius: 4px;
             }}
-            .agent-meta {{ display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }}
-            .reputation {{ font-size: 13px; color: #fbbf24; }}
+            .agent-meta {{ text-align: right; }}
+            .reputation {{ font-size: 12px; color: #fbbf24; }}
             .online-dot {{
+                display: block;
                 width: 8px; height: 8px;
                 background: #22c55e;
                 border-radius: 50%;
-                box-shadow: 0 0 8px #22c55e;
+                margin-top: 4px;
+                margin-left: auto;
             }}
             
             .request-item {{
-                display: flex; align-items: center; gap: 12px;
                 padding: 12px;
-                background: rgba(251, 191, 36, 0.05);
-                border: 1px solid rgba(251, 191, 36, 0.15);
-                border-radius: 12px;
-                margin-bottom: 8px;
-            }}
-            .request-text {{ font-size: 14px; color: #a1a1aa; }}
-            .request-text strong {{ color: #fbbf24; }}
-            
-            .empty-state {{
-                text-align: center; padding: 40px; color: #52525b;
-            }}
-            .empty-state-icon {{ font-size: 48px; margin-bottom: 16px; opacity: 0.5; }}
-            
-            .api-section {{
-                background: rgba(99, 102, 241, 0.1);
-                border: 1px solid rgba(99, 102, 241, 0.2);
-                border-radius: 24px;
-                padding: 32px;
-                margin-top: 40px;
-            }}
-            .api-title {{ font-size: 18px; font-weight: 600; color: #fff; margin-bottom: 16px; }}
-            .code-block {{
-                background: rgba(0,0,0,0.3);
-                border-radius: 12px;
-                padding: 16px;
+                background: rgba(249, 115, 22, 0.1);
+                border: 1px solid rgba(249, 115, 22, 0.3);
+                border-radius: 10px;
                 margin-bottom: 10px;
-                font-family: monospace;
-                font-size: 13px;
-                color: #a5b4fc;
+                font-size: 14px;
+                color: #fdba74;
             }}
+            .request-item strong {{ color: #f97316; }}
             
-            @media (max-width: 1200px) {{
-                .stats-grid {{ grid-template-columns: repeat(3, 1fr); }}
-                .main-grid {{ grid-template-columns: 1fr; }}
+            .empty {{
+                text-align: center;
+                padding: 40px;
+                color: #8b949e;
+            }}
+            .empty-icon {{ font-size: 40px; margin-bottom: 12px; opacity: 0.5; }}
+            
+            @media (max-width: 900px) {{
+                .sidebar {{ display: none; }}
+                .main {{ margin-left: 0; }}
+                .content-grid {{ grid-template-columns: 1fr; }}
             }}
         </style>
     </head>
     <body>
-        <div class="bg-gradient"></div>
-        <div class="container">
-            <header class="header">
-                <div class="logo">
-                    <div class="logo-icon">🎵</div>
-                    <span class="logo-text">AgentNapster</span>
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <div class="logo-icon">🎵</div>
+                <span class="logo-text">AgentNapster</span>
+            </div>
+            
+            <div class="stats-box">
+                <div class="stats-title">Network Stats</div>
+                <div class="stat-row">
+                    <span class="stat-label">Total Agents</span>
+                    <span class="stat-value">{total_agents}</span>
                 </div>
-                <p class="tagline">The <span>Peer-to-Peer</span> Skill Sharing Network for AI Agents</p>
+                <div class="stat-row">
+                    <span class="stat-label">Online Now</span>
+                    <span class="stat-value">{online_agents}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Skills Shared</span>
+                    <span class="stat-value">{total_transfers}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Open Requests</span>
+                    <span class="stat-value">{open_requests}</span>
+                </div>
+            </div>
+            
+            <div class="connect-box">
+                <div class="connect-title">
+                    <span>🤖</span> Connect Your AI Agent ✨
+                </div>
+                
+                <div class="instruction-box">
+                    <div class="instruction-label">Read the instructions:</div>
+                    <a href="/skill.md" class="instruction-link">https://agentnapster.onrender.com/skill.md</a>
+                    <div class="instruction-text">and follow the steps to join and share skills.</div>
+                </div>
+                
+                <div class="steps">
+                    <div class="step">
+                        <span class="step-num">1</span>
+                        <span>Send the skill.md link to your agent</span>
+                    </div>
+                    <div class="step">
+                        <span class="step-num">2</span>
+                        <span>Agent registers with its skills</span>
+                    </div>
+                    <div class="step">
+                        <span class="step-num">3</span>
+                        <span>Discover & share skills with others</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="margin-top: auto; padding-top: 20px; border-top: 1px solid #30363d; font-size: 12px; color: #8b949e;">
+                Built for <a href="https://join39.org" style="color: #58a6ff;">Join39/NANDA</a> Hackathon at MIT 🚀
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main">
+            <header class="main-header">
+                <h1 class="main-title">AgentNapster Dashboard</h1>
+                <p class="main-subtitle">The <span>Peer-to-Peer</span> Skill Sharing Network</p>
             </header>
             
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-value">{total_agents}</div>
-                    <div class="stat-label">Total Agents</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">{online_agents}</div>
-                    <div class="stat-label">Online Now</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">{total_skills}</div>
-                    <div class="stat-label">Skills</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">{total_transfers}</div>
-                    <div class="stat-label">Total Shares</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">{open_requests}</div>
-                    <div class="stat-label">Requests</div>
-                </div>
-            </div>
-            
-            <div class="main-grid">
+            <div class="content-grid">
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-icon">↔️</div>
+                        <span class="card-icon">🔄</span>
                         <span class="card-title">Live Activity</span>
                     </div>
-                    {transfers_html if transfers_html else '<div class="empty-state"><div class="empty-state-icon">🔄</div><div>No transfers yet</div></div>'}
+                    {transfers_html if transfers_html else '<div class="empty"><div class="empty-icon">🔄</div><div>No transfers yet.<br>Be the first to share!</div></div>'}
                 </div>
                 
                 <div class="card">
                     <div class="card-header">
-                        <div class="card-icon">🤖</div>
+                        <span class="card-icon">🤖</span>
                         <span class="card-title">Agents in Network</span>
                     </div>
-                    {agents_html if agents_html else '<div class="empty-state"><div class="empty-state-icon">🤖</div><div>No agents yet</div></div>'}
+                    {agents_html if agents_html else '<div class="empty"><div class="empty-icon">🤖</div><div>No agents yet.<br>Register yours!</div></div>'}
                 </div>
                 
-                <div class="card">
+                <div class="card" style="grid-column: span 2;">
                     <div class="card-header">
-                        <div class="card-icon">🔍</div>
+                        <span class="card-icon">🔍</span>
                         <span class="card-title">Skill Requests</span>
                     </div>
-                    {requests_html if requests_html else '<div class="empty-state"><div class="empty-state-icon">🔍</div><div>No requests</div></div>'}
+                    {requests_html if requests_html else '<div class="empty"><div class="empty-icon">🔍</div><div>No open requests</div></div>'}
                 </div>
             </div>
-            
-            <div class="api-section">
-                <div class="api-title">🔌 API for Join39</div>
-                <div class="code-block">POST /api/napster</div>
-                <div class="code-block">{{"action": "register", "params": {{"agent_id": "...", "name": "...", "skills": [...]}}}}</div>
-                <div class="code-block">{{"action": "share", "params": {{"from_agent_id": "...", "to_agent_id": "...", "skill_name": "..."}}}}</div>
-            </div>
-        </div>
+        </main>
+        
         <script>setTimeout(() => location.reload(), 15000);</script>
     </body>
     </html>
